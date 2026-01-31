@@ -1,4 +1,5 @@
 import serial
+import serial.tools.list_ports
 import time
 import threading
 from pynput import mouse, keyboard
@@ -8,7 +9,7 @@ from pynput import mouse, keyboard
 # ==========================================
 
 class ArduinoKVMClient:
-    def __init__(self, port='COM5', baud_rate=115200):
+    def __init__(self, port=None, baud_rate=115200):
         self.port = port
         self.baud_rate = baud_rate
         self.lock = threading.Lock()
@@ -16,6 +17,10 @@ class ArduinoKVMClient:
         self.connected = False
         self.error_msg = ""
         
+        # 如果未指定端口，尝试自动寻找
+        if self.port is None:
+            self.port = self.find_device()
+
         # 状态
         self.target_os = 'WIN' # 'WIN' or 'MAC'
         self.mirror_enabled = False
@@ -31,7 +36,35 @@ class ArduinoKVMClient:
         self.prev_y = 0
         self.first_move = True
 
+    @staticmethod
+    def list_ports():
+        """列出所有可用串口"""
+        return [p.device for p in serial.tools.list_ports.comports()]
+
+    @staticmethod
+    def find_device():
+        """尝试自动查找 Arduino 设备"""
+        ports = serial.tools.list_ports.comports()
+        candidates = []
+        for p in ports:
+            # 优先匹配 Arduino 或 Leonardo
+            desc = p.description.lower()
+            hwid = p.hwid.lower()
+            if "arduino" in desc or "leonardo" in desc or "vid:pid=2341" in hwid:
+                return p.device
+            candidates.append(p.device)
+        
+        # 如果找不到明确的，但有且只有一个串口，就用它
+        if len(candidates) == 1:
+            return candidates[0]
+            
+        return None
+
     def connect(self):
+        if not self.port:
+            self.error_msg = "未指定串口且未能自动找到设备"
+            return False
+
         try:
             self.ser = serial.Serial(self.port, self.baud_rate, timeout=0.1)
             self.connected = True

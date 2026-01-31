@@ -11,20 +11,48 @@ class KVMGuiApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Arduino KVM 控制台 (基于 Lib)")
-        self.root.geometry("700x550")
+        self.root.geometry("700x600")
         
-        # 1. 初始化核心库
+        # 1. 初始化核心库 (尝试自动检测，但不强制连接成功)
         self.kvm = arduino_kvm_lib.ArduinoKVMClient()
-        if not self.kvm.connect():
-            messagebox.showerror("错误", f"无法连接串口。请检查占用。\n{self.kvm.error_msg}")
-            root.destroy()
-            return
-            
+        
         self.setup_ui()
         
+        # 尝试自动连接
+        if self.kvm.port:
+            if self.kvm.connect():
+                self.set_status(f"已连接: {self.kvm.port}", "green")
+                self.combo_ports.set(self.kvm.port)
+            else:
+                self.set_status(f"连接失败: {self.kvm.port}", "red")
+        else:
+            self.set_status("未检测到设备", "orange")
+
+    def set_status(self, text, color):
+        self.lbl_status.config(text=text, foreground=color)
+
     def setup_ui(self):
-        # --- 顶部：设置区域 ---
-        top_frame = ttk.LabelFrame(self.root, text="设置 & 状态", padding=10)
+        # --- 顶部：连接设置 ---
+        conn_frame = ttk.LabelFrame(self.root, text="连接设置", padding=10)
+        conn_frame.pack(fill=tk.X, padx=10, pady=5)
+
+        ttk.Label(conn_frame, text="端口:").pack(side=tk.LEFT, padx=5)
+        
+        self.port_list = arduino_kvm_lib.ArduinoKVMClient.list_ports()
+        self.combo_ports = ttk.Combobox(conn_frame, values=self.port_list, width=10)
+        self.combo_ports.pack(side=tk.LEFT, padx=5)
+        
+        btn_refresh = ttk.Button(conn_frame, text="刷新", command=self.on_refresh_ports)
+        btn_refresh.pack(side=tk.LEFT, padx=5)
+        
+        btn_connect = ttk.Button(conn_frame, text="连接", command=self.on_connect)
+        btn_connect.pack(side=tk.LEFT, padx=5)
+
+        self.lbl_status = ttk.Label(conn_frame, text="等待连接...", font=("Arial", 10, "bold"))
+        self.lbl_status.pack(side=tk.LEFT, padx=20)
+
+        # --- 设置状态区域 ---
+        top_frame = ttk.LabelFrame(self.root, text="功能开关", padding=10)
         top_frame.pack(fill=tk.X, padx=10, pady=5)
         
         # 镜像开关
@@ -87,6 +115,27 @@ class KVMGuiApp:
     def on_send_text(self):
         txt = self.entry_text.get()
         self.kvm.type_text(txt)
+
+    def on_refresh_ports(self):
+        self.port_list = arduino_kvm_lib.ArduinoKVMClient.list_ports()
+        self.combo_ports['values'] = self.port_list
+        if self.port_list:
+            self.combo_ports.current(0)
+            
+    def on_connect(self):
+        selected_port = self.combo_ports.get()
+        if not selected_port:
+            return
+            
+        if self.kvm.connected:
+            self.kvm.disconnect()
+            
+        self.kvm.port = selected_port
+        if self.kvm.connect():
+             self.set_status(f"已连接: {selected_port}", "green")
+        else:
+             self.set_status(f"连接失败: {self.kvm.error_msg}", "red")
+             messagebox.showerror("连接失败", self.kvm.error_msg)
 
     def on_close(self):
         self.kvm.stop_mirroring()
